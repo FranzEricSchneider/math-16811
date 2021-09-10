@@ -1,5 +1,8 @@
 import numpy
 
+from array_to_latex import to_ltx
+
+
 """
 Implement the P A = LDU decomposition algorithm discussed in class. Do so
 yourself (in other words, do not merely use predefined Gaussian elimination
@@ -19,18 +22,31 @@ EXAMPLES = [
         [1, 1, 0],
         [1, 1, 2],
         [4, 2, 3],
-    ])
+    ]),
+    numpy.array([
+        [0, 1, 0],
+        [1, 0, 0],
+        [0, 0, 1],
+    ]),
+    numpy.array([
+        [7, 6, 1],
+        [4, 5, 1],
+        [7, 7, 7],
+    ]),
 ]
+
+# Make a test vector
+TEST = numpy.array([[6, 7, 14]]).T
 
 # Compare against THRESHOLD instead of "== 0" to deal with float error
 THRESHOLD = 1e-10
 
 # Whether to include print statements
-DEBUG = True
+DEBUG = False
 
 
 def main():
-    for A in EXAMPLES:
+    for i, A in enumerate(EXAMPLES):
         P, L, D, U = decompose_pldu(A.astype(float))
         if DEBUG:
             print(f"Input A:\n{A}")
@@ -38,6 +54,18 @@ def main():
             print(f"Final L:\n{L}")
             print(f"Final D:\n{D}")
             print(f"Final U:\n{U}")
+
+        print("-" * 80)
+        print(f"EXAMPLE {i + 1}")
+        print("-" * 80)
+        print("PA &= LDU \\\\")
+        print(f"{to_tex(P)}\n{to_tex(A)}\n&=\n{to_tex(L)}\n{to_tex(D)}\n{to_tex(U)}")
+        print("-" * 80)
+        print("PAx &= Pb \\\\")
+        print(f"{to_tex(P)}\n{to_tex(A)}\n{to_tex(TEST)}\n&=\n{to_tex(P @ A @ TEST)} \\\\")
+        print("LDUx &= Pb \\\\")
+        print(f"{to_tex(L)}\n{to_tex(D)}\n{to_tex(U)}\n{to_tex(TEST)}\n&=\n{to_tex(L @ D @ U @ TEST)}")
+        print("-" * 80)
 
 
 def decompose_pldu(A):
@@ -77,10 +105,6 @@ def decompose_pldu(A):
         # Advance to the next row
         active_row += 1
 
-        # TODO: Test this assertion with a no-op row. Maybe an empty decomp?
-        if numpy.allclose(start, DU):
-            raise ValueError("We've gotten into a loop with no progress...")
-
     # Split D and U
     values = numpy.diag(DU)
     D = numpy.diag(values)
@@ -119,12 +143,6 @@ def best_swap(DU, active_row):
     future swaps without actually reasoning about future swaps. No idea if this
     is a good criteria.
     """
-    print(f"DU: {DU}")
-    print(f"active_row + 1: {active_row + 1}")
-    print(f"DU.shape[0]: {DU.shape[0]}")
-    print(f"range(active_row + 1, DU.shape[0]): {list(range(active_row + 1, DU.shape[0]))}")
-    print(f"active_row: {active_row}")
-    print(f"DU[idx, active_row]: {DU[2, active_row]}")
     candidates = [idx for idx in range(active_row + 1, DU.shape[0])
                   if abs(DU[idx, active_row]) > THRESHOLD]
     assert len(candidates) > 0
@@ -158,6 +176,10 @@ def swaprow(P, L, DU, idx0, idx1):
     L[[idx0, idx1]] = L[[idx1, idx0]]
     L += numpy.eye(L.shape[0])
     return P, L, DU
+
+
+def to_tex(M, **kwargs):
+    return to_ltx(M, frmt='{:.3f}', print_out=False, **kwargs).replace(".000", "")
 
 
 if __name__ == "__main__":
