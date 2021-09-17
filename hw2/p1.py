@@ -35,6 +35,14 @@ EXAMPLES = [
     # p1 part c
     (lambda x: 1 / (1 + 36 * x**2), q1pc(2), 0.06, "1 / (1 + 36 * x**2), n=2"),
     (lambda x: 1 / (1 + 36 * x**2), q1pc(4), 0.06, "1 / (1 + 36 * x**2), n=4"),
+    (lambda x: 1 / (1 + 36 * x**2), q1pc(6), 0.06, "1 / (1 + 36 * x**2), n=6"),
+    (lambda x: 1 / (1 + 36 * x**2), q1pc(8), 0.06, "1 / (1 + 36 * x**2), n=8"),
+    (lambda x: 1 / (1 + 36 * x**2), q1pc(10), 0.06, "1 / (1 + 36 * x**2), n=10"),
+    (lambda x: 1 / (1 + 36 * x**2), q1pc(12), 0.06, "1 / (1 + 36 * x**2), n=12"),
+    (lambda x: 1 / (1 + 36 * x**2), q1pc(14), 0.06, "1 / (1 + 36 * x**2), n=14"),
+    (lambda x: 1 / (1 + 36 * x**2), q1pc(16), 0.06, "1 / (1 + 36 * x**2), n=16"),
+    (lambda x: 1 / (1 + 36 * x**2), q1pc(18), 0.06, "1 / (1 + 36 * x**2), n=18"),
+    (lambda x: 1 / (1 + 36 * x**2), q1pc(20), 0.06, "1 / (1 + 36 * x**2), n=20"),
     (lambda x: 1 / (1 + 36 * x**2), q1pc(40), 0.06, "1 / (1 + 36 * x**2), n=40"),
     # just a test
     (
@@ -53,17 +61,37 @@ EXAMPLES = [
 ]
 
 
+# Number of error points to check out in the given range
+ERROR_SLICES = 200
+
+
 # Whether to include visualizing plots
 PLOT = True
 
 
 def main():
-    for i, (function, x_values, eval_at, title) in enumerate(EXAMPLES):
+    for function, x_values, eval_at, title in EXAMPLES:
         # Store the cache of derivative values. Without this the n=40 example
         # hung very badly for me
         deriv_cache = {}
+
+        # Calculate the interpolation at the requested point
         y_values = numpy.array([function(x) for x in x_values])
         value = poly_interp(eval_at, x_values, y_values, deriv_cache)
+
+        # Calculate the error across the requested range
+        error_range = [numpy.min(x_values), numpy.max(x_values)]
+        error_x = numpy.linspace(error_range[0], error_range[1], ERROR_SLICES)
+        max_error = numpy.max([
+            abs(function(x) - poly_interp(x, x_values, y_values, deriv_cache))
+            for x in error_x
+        ])
+
+        # Display everything
+        print("-" * 80)
+        print(f"{title}, interpolated value {value}, actual: {function(eval_at)}")
+        print(f"\tMax error across x={error_range} was {max_error}")
+        print("-" * 80)
         if PLOT:
             plot_x = numpy.linspace(numpy.min(x_values), numpy.max(x_values), 200)
             plot_y = numpy.array([function(x) for x in plot_x])
@@ -74,11 +102,8 @@ def main():
             pyplot.plot(x_values, y_values, 'bo', markersize=10, label="data")
             pyplot.plot([eval_at], [value], 'go', markersize=14, label=f"({eval_at:.3f}, {value:.3f})")
             pyplot.legend()
-            pyplot.title(f"Function {title}")
+            pyplot.title(f"Function {title}, max_error: {max_error:.3f}")
             pyplot.show()
-        print("-" * 80)
-        print(f"EXAMPLE {i + 1}, value {value}, actual: {function(eval_at)}")
-        print("-" * 80)
 
 
 def poly_interp(eval_at, X, Y, deriv_cache):
