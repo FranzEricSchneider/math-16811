@@ -57,7 +57,7 @@ class Path:
 
     @property
     def plot_args(self):
-        return (self.x, self.y, "bo-" if self.is_cw else "go-")
+        return (self.x, self.y, "bo-" if self.is_cw else "co-")
 
     @property
     def plot_kwargs(self):
@@ -88,8 +88,23 @@ class Triangle:
                 return False
         return True
 
-    def score(self, point):
-        pass
+    def svd_weights(self, point):
+        """
+        In order to find the weights to come to a point somewhere within a
+        given triangle, we can use SVD. We have infinite exact solutions, b/c
+        we have three (assumedly independent) vectors covering a 2D space.
+        Therefore the null space is rank 1. We can get an SVD solution on how
+        to reach a particular point with those three vectors, which will be one
+        possible set of weights.
+        """
+        A = self.points.T
+        u, s, vt = numpy.linalg.svd(A)
+        # Make sigma_inv a matrix
+        sigma_inv = numpy.zeros(A.T.shape)
+        for i, s_value in enumerate(s):
+            sigma_inv[i, i] = 1 / s_value
+        # Find the SVD solution for this given point in space
+        return vt.T @ sigma_inv @ u.T @ point
 
     @property
     def points(self):
@@ -157,7 +172,7 @@ def plot_scene(paths=tuple(), fire=True, dest=True, delaunay=None,
                 axis.plot([p0[0], p1[0]], [p0[1], p1[1]], "k", linewidth=1)
     if tripoint:
         point, triangles = tripoint
-        axis.plot(point[0], point[1], "ko", markersize=15)
+        axis.plot(point[0], point[1], "ko", markersize=10)
         for tri in triangles:
             color = "r"
             width = 0.5
@@ -173,7 +188,7 @@ def plot_scene(paths=tuple(), fire=True, dest=True, delaunay=None,
     pyplot.show()
 
 
-def main(start, paths, plot_contains, plot_delaunay):
+def main(paths, plot_contains, plot_delaunay, plot_weights):
     cw = [path for path in paths if path.is_cw]
     ccw = [path for path in paths if not path.is_cw]
     ccw_points = numpy.array([path.start for path in ccw])
@@ -187,12 +202,31 @@ def main(start, paths, plot_contains, plot_delaunay):
         if plot_delaunay:
             plot_scene(paths, delaunay=delaunay)
 
-    # Optional debugging of the "contain" process
-    if plot_contains:
-        plot_scene(paths, tripoint=(start, triangles))
+    for start in STARTING_POINTS:
 
-    # import ipdb; ipdb.set_trace()
-    pass
+        # Optional debugging of the "contain" process
+        if plot_contains:
+            plot_scene(paths, tripoint=(start, triangles))
+
+        # By the HW assertions we should have one single triangle here
+        chosen = [tri for tri in triangles if tri.contains(start)][0]
+
+        # Find the SVD solution for this given point in space
+        weights = chosen.svd_weights(start)
+        if plot_weights:
+            for point_args in chosen.plot_point_args:
+                pyplot.plot(*point_args)
+            p0 = numpy.array([0, 0])
+            for i, (tripoint, color) in enumerate(zip(chosen.points, "rgb")):
+                p1 = p0 + weights[i] * chosen.points[i]
+                pyplot.plot([0, tripoint[0]], [0, tripoint[1]], color)
+                pyplot.plot([p0[0], p1[0]], [p0[1], p1[1]], color, linewidth=3)
+                p0 = p1
+            pyplot.plot(start[0], start[1], "ko", markersize=15)
+            pyplot.show()
+
+        import ipdb; ipdb.set_trace()
+        pass
 
 
 if __name__ == "__main__":
@@ -206,6 +240,9 @@ if __name__ == "__main__":
                         action="store_true")
     parser.add_argument("-i", "--initial-state",
                         help="Plot the initial input state.",
+                        action="store_true")
+    parser.add_argument("-w", "--plot-weights",
+                        help="Plot debug output for the weight solution.",
                         action="store_true")
     args = parser.parse_args()
 
@@ -221,9 +258,8 @@ if __name__ == "__main__":
     if args.initial_state:
         plot_scene(paths)
 
-    for starting_point in STARTING_POINTS:
-        main(starting_point,
-             paths,
-             plot_contains=args.plot_contains,
-             plot_delaunay=args.plot_delaunay,
-             )
+    main(paths,
+         plot_contains=args.plot_contains,
+         plot_delaunay=args.plot_delaunay,
+         plot_weights=args.plot_weights,
+         )
