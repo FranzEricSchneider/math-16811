@@ -27,10 +27,10 @@ def q1pc(n):
 EXAMPLES = [
     # p1 part b
     (
-        lambda x: numpy.exp(x**2 / 2),
+        lambda x: numpy.exp(-x**2 / 2),
         numpy.array([0, 1/8, 1/4, 1/2, 3/4, 1]),
         1/3,
-        "e^{x^2 / 2}"
+        "e^{-x^2 / 2}"
     ),
     # p1 part c
     (lambda x: 1 / (1 + 36 * x**2), q1pc(2), 0.06, "1 / (1 + 36 * x**2), n=2"),
