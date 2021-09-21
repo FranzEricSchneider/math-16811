@@ -5,8 +5,10 @@ from matplotlib import pyplot
 import numpy
 from scipy.spatial import Delaunay
 
+from p1 import poly_interp
 
-# Location of the hoop
+
+# Location and size of the hoop
 FIRE_PT = numpy.array([5, 5])
 FIRE_RADIUS = 1.5
 
@@ -71,7 +73,7 @@ class Triangle:
         # Enforce a CW ordering of the three points, so that they orbit the
         # center in a CW manner. If the cross is negative (Z into the page)
         # that means we're rotating CW
-        cross = numpy.cross(vector(paths[0], paths[1]),
+        cross = numpy.cross(paths[1].start - paths[0].start,
                             center(paths) - paths[0].start)
         if cross <= 0:
             self.paths = paths
@@ -104,7 +106,21 @@ class Triangle:
         for i, s_value in enumerate(s):
             sigma_inv[i, i] = 1 / s_value
         # Find the SVD solution for this given point in space
-        return vt.T @ sigma_inv @ u.T @ point
+        weights = vt.T @ sigma_inv @ u.T @ point
+
+        # TODO: Figure out a final weight solution. This solution to get
+        # weights with a unit norm was a failure, the path diverged extensively
+        # # null space = unit norm
+        # null = vt[2, :]
+        # scalar = numpy.sqrt(1 - numpy.linalg.norm(weights)**2)
+        # assert numpy.isclose(weights.dot(null), 0.0)
+        # return weights + scalar * null
+
+        # TODO: Figure out a final weight solution. This solution using just
+        # the average tracks the paths nicely but doesn't hit the start exactly
+        # return numpy.array([1, 1, 1]) / 3
+
+        return weights
 
     @property
     def points(self):
@@ -137,6 +153,76 @@ class Triangle:
         ]
 
 
+class Interpolation:
+    def __init__(self, paths, weights):
+        self.paths = paths
+        self.weights = weights
+        # See the poly_interp function for what this does. We want one cache
+        # for x and another for y, for each path
+        self.derivative_cache = [[{}, {}] for path in paths]
+
+    def plot(self, axis):
+        # Plot the paths made up by the original triangle
+        axis.plot([-1], [-1], "ko", ms=4, lw=1, label="triangle paths")
+        for path in self.paths:
+            axis.plot(path.x, path.y, "ko-", ms=4, lw=1)
+
+        time = numpy.linspace(0, len(self.paths[0].x) - 1, 100)
+        interp_xy = numpy.array([self.interpolate(t) for t in time])
+        axis.plot([-1], [-1], "g", lw=3, label="interpolated")
+        axis.plot(interp_xy[:, 0], interp_xy[:, 1], "g", lw=3)
+
+    def interpolate(self, time):
+        """Interpolated weighted paths at the given time.
+
+        It is assumed that we step through the original paths at one step per
+        time step, so time=20 corresponds to path.x[20]
+        """
+
+        # Find a 4-element window within which to interpolate. I chose 4
+        # elements because then the interpolated data points (X) would be
+        # symmetric around the time point (o) and I wouldn't have to figure out
+        # something clever for odd-numbered windows
+        # X....X..o.X....X
+        radius = 2
+        # Clamp the lower radius to 0 (makes sense) and also so that lower
+        # plus 2*radius hits the end of the path.
+        lower_idx = numpy.clip(a=int(time) - radius,
+                               a_min=0,
+                               a_max=len(self.paths[0].x) - (2 * radius))
+        upper_idx = lower_idx + 2 * radius
+
+        # IMPORTANT - We are interpolating SEPARATELY on both x and y
+        # Create a 2x3 matrix of [x1, x2, x3]
+        #                        [y1, y2, y3]
+        # Where the (x, y) values are the interpolated values on each path
+        time_data = list(range(lower_idx, upper_idx))
+        points = numpy.array([
+            [
+                poly_interp(eval_at=time,
+                            X=time_data,
+                            Y=path.x[lower_idx:upper_idx],
+                            deriv_cache=self.derivative_cache[i][0]),
+                poly_interp(eval_at=time,
+                            X=time_data,
+                            Y=path.y[lower_idx:upper_idx],
+                            deriv_cache=self.derivative_cache[i][1]),
+            ]
+            for i, path in enumerate(self.paths)
+        ]).T
+        xy = points.dot(self.weights)
+
+        # Check our interpolation at each data point
+        if numpy.isclose(time, int(time)):
+            true_points = numpy.array([
+                [self.paths[i].x[int(time)] for i in range(len(self.paths))],
+                [self.paths[i].y[int(time)] for i in range(len(self.paths))],
+            ])
+            assert numpy.allclose(xy, true_points.dot(self.weights))
+
+        return xy
+
+
 def center(paths):
     """Return the center of the start points of the given paths."""
     return numpy.average(
@@ -145,13 +231,8 @@ def center(paths):
     )
 
 
-def vector(p0, p1):
-    """Return a vector from the start of p0 to the start of p1."""
-    return p1.start - p0.start
-
-
 def plot_scene(paths=tuple(), fire=True, dest=True, delaunay=None,
-               tripoint=None):
+               tripoint=None, interpath=None):
     figure = pyplot.figure()
     axis = figure.add_subplot(111)
 
@@ -159,20 +240,20 @@ def plot_scene(paths=tuple(), fire=True, dest=True, delaunay=None,
         axis.plot(*path.plot_args, **path.plot_kwargs)
     if fire:
         circle = pyplot.Circle(
-            tuple(FIRE_PT), FIRE_RADIUS, color='r', fill=False, linewidth=2
+            tuple(FIRE_PT), FIRE_RADIUS, color='r', fill=False, lw=2
         )
         axis.add_artist(circle)
     if dest:
-        axis.plot([8], [8], "ro", markersize=15)
+        axis.plot([8], [8], "ro", ms=15)
     if delaunay:
         for simplex in delaunay.simplices:
             for idx0, idx1 in zip(simplex, islice(cycle(simplex), 1, None)):
                 p0 = delaunay.points[idx0]
                 p1 = delaunay.points[idx1]
-                axis.plot([p0[0], p1[0]], [p0[1], p1[1]], "k", linewidth=1)
+                axis.plot([p0[0], p1[0]], [p0[1], p1[1]], "k", lw=1)
     if tripoint:
         point, triangles = tripoint
-        axis.plot(point[0], point[1], "ko", markersize=10)
+        axis.plot(point[0], point[1], "ko", ms=10)
         for tri in triangles:
             color = "r"
             width = 0.5
@@ -180,7 +261,9 @@ def plot_scene(paths=tuple(), fire=True, dest=True, delaunay=None,
                 color = "g"
                 width = 3
             for line_args in tri.plot_line_args:
-                pyplot.plot(*line_args, color, linewidth=width)
+                pyplot.plot(*line_args, color, lw=width)
+    if interpath:
+        interpath.plot(axis)
 
     axis.set_xlim(0, 12)
     axis.set_ylim(0, 12)
@@ -188,7 +271,7 @@ def plot_scene(paths=tuple(), fire=True, dest=True, delaunay=None,
     pyplot.show()
 
 
-def main(paths, plot_contains, plot_delaunay, plot_weights):
+def main(paths, plot_contains, plot_delaunay, plot_weights, plot_paths):
     cw = [path for path in paths if path.is_cw]
     ccw = [path for path in paths if not path.is_cw]
     ccw_points = numpy.array([path.start for path in ccw])
@@ -212,7 +295,11 @@ def main(paths, plot_contains, plot_delaunay, plot_weights):
         chosen = [tri for tri in triangles if tri.contains(start)][0]
 
         # Find the SVD solution for this given point in space
+        # PROBLEM - BASIC SVD SOLUTION DOES NOT HAVE UNIT NORM
         weights = chosen.svd_weights(start)
+        # TODO: Try getting barycentric weights?
+
+        # TODO: Refactor this into a function?
         if plot_weights:
             for point_args in chosen.plot_point_args:
                 pyplot.plot(*point_args)
@@ -220,13 +307,16 @@ def main(paths, plot_contains, plot_delaunay, plot_weights):
             for i, (tripoint, color) in enumerate(zip(chosen.points, "rgb")):
                 p1 = p0 + weights[i] * chosen.points[i]
                 pyplot.plot([0, tripoint[0]], [0, tripoint[1]], color)
-                pyplot.plot([p0[0], p1[0]], [p0[1], p1[1]], color, linewidth=3)
+                pyplot.plot([p0[0], p1[0]], [p0[1], p1[1]], color, lw=3)
                 p0 = p1
-            pyplot.plot(start[0], start[1], "ko", markersize=15)
+            pyplot.plot(start[0], start[1], "ko", ms=15)
             pyplot.show()
 
-        import ipdb; ipdb.set_trace()
-        pass
+        # Calculate the interpolated path
+        interpolation = Interpolation(chosen.paths, weights)
+        # But only display it if requested
+        if plot_paths:
+            plot_scene(paths, interpath=interpolation)
 
 
 if __name__ == "__main__":
@@ -240,6 +330,9 @@ if __name__ == "__main__":
                         action="store_true")
     parser.add_argument("-i", "--initial-state",
                         help="Plot the initial input state.",
+                        action="store_true")
+    parser.add_argument("-p", "--plot-paths",
+                        help="Plot debug output for the final paths.",
                         action="store_true")
     parser.add_argument("-w", "--plot-weights",
                         help="Plot debug output for the weight solution.",
@@ -261,5 +354,6 @@ if __name__ == "__main__":
     main(paths,
          plot_contains=args.plot_contains,
          plot_delaunay=args.plot_delaunay,
+         plot_paths=args.plot_paths,
          plot_weights=args.plot_weights,
          )
