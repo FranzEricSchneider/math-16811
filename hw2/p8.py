@@ -79,18 +79,25 @@ class Triangle:
             self.paths = [paths[0], paths[2], paths[1]]
 
     def contains(self, point):
-        points = [p.start for p in self.paths]
-        for p0, p1 in zip(points, islice(cycle(points), 1, None)):
+        for p0, p1 in self.cycle:
             # Get a vector going into the triangle, then see if the center - p0
             # has a positive or negative dot product with that vector
             perpendicular = RN90.dot(p1 - p0)
             unit = perpendicular / numpy.linalg.norm(perpendicular)
-            if unit.dot(self.center - p0):
+            if unit.dot(point - p0) < 0:
                 return False
         return True
 
     def score(self, point):
         pass
+
+    @property
+    def points(self):
+        return numpy.array([p.start for p in self.paths])
+
+    @property
+    def cycle(self):
+        return zip(self.points, islice(cycle(self.points), 1, None))
 
     @property
     def center(self):
@@ -101,10 +108,17 @@ class Triangle:
             return self._center
 
     @property
-    def plot_args(self):
+    def plot_point_args(self):
         return [
             (path.x[0], path.y[0], color + "o")
             for path, color in zip(self.paths, "rgb")
+        ]
+
+    @property
+    def plot_line_args(self):
+        return [
+            ([p0[0], p1[0]], [p0[1], p1[1]])
+            for p0, p1 in self.cycle
         ]
 
 
@@ -121,7 +135,8 @@ def vector(p0, p1):
     return p1.start - p0.start
 
 
-def plot_scene(paths=tuple(), fire=True, dest=True, delaunay=None):
+def plot_scene(paths=tuple(), fire=True, dest=True, delaunay=None,
+               tripoint=None):
     figure = pyplot.figure()
     axis = figure.add_subplot(111)
 
@@ -140,6 +155,17 @@ def plot_scene(paths=tuple(), fire=True, dest=True, delaunay=None):
                 p0 = delaunay.points[idx0]
                 p1 = delaunay.points[idx1]
                 axis.plot([p0[0], p1[0]], [p0[1], p1[1]], "k", linewidth=1)
+    if tripoint:
+        point, triangles = tripoint
+        axis.plot(point[0], point[1], "ko", markersize=15)
+        for tri in triangles:
+            color = "r"
+            width = 0.5
+            if tri.contains(point):
+                color = "g"
+                width = 3
+            for line_args in tri.plot_line_args:
+                pyplot.plot(*line_args, color, linewidth=width)
 
     axis.set_xlim(0, 12)
     axis.set_ylim(0, 12)
@@ -149,35 +175,23 @@ def plot_scene(paths=tuple(), fire=True, dest=True, delaunay=None):
 
 def main(start, paths, plot_contains, plot_delaunay):
     cw = [path for path in paths if path.is_cw]
-    cw_points = numpy.array([path.start for path in cw])
     ccw = [path for path in paths if not path.is_cw]
     ccw_points = numpy.array([path.start for path in ccw])
 
-    if plot_delaunay:
-        cw_delaunay = Delaunay(cw_points)
-        plot_scene(paths, delaunay=cw_delaunay)
-        ccw_delaunay = Delaunay(ccw_points)
-        plot_scene(paths, delaunay=ccw_delaunay)
-    import ipdb; ipdb.set_trace()
-
     triangles = []
-    for tri in combinations(cw, r=3):
-        triangles.append(Triangle(tri))
-    for tri in combinations(ccw, r=3):
-        triangles.append(Triangle(tri))
+    for path_grouping in [cw, ccw]:
+        points = numpy.array([path.start for path in path_grouping])
+        delaunay = Delaunay(points)
+        for simplex in delaunay.simplices:
+            triangles.append(Triangle([path_grouping[idx] for idx in simplex]))
+        if plot_delaunay:
+            plot_scene(paths, delaunay=delaunay)
 
     # Optional debugging of the "contain" process
     if plot_contains:
-        for tri in triangles:
-            for point_args in tri.plot_args:
-                pyplot.plot(*point_args, markersize=15)
-            if tri.contains(start):
-                color = "r"
-            else:
-                color = "g"
-            pyplot.plot(start[0], start[1], color + "o", markersize=20)
-            pyplot.show()
-    import ipdb; ipdb.set_trace()
+        plot_scene(paths, tripoint=(start, triangles))
+
+    # import ipdb; ipdb.set_trace()
     pass
 
 
