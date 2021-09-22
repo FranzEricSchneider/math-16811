@@ -18,15 +18,20 @@ numpy.set_printoptions(suppress=True, precision=4)
 PLOT = True
 
 
-# Tuples of (title, function, first derivative of function, center value) to
-# pass into root finding
+# Tuples of (title, ylim, function, first derivative of function,
+# center value) to pass into root finding
 EXAMPLES = [
-    ("tan(x)", numpy.tan, lambda x: (1 / numpy.cos(x))**2, 21),
+    ("tan(x)", 50, numpy.tan, lambda x: (1 / numpy.cos(x))**2, 17),
+    ("tan(x)", 50, numpy.tan, lambda x: (1 / numpy.cos(x))**2, 18),
+    ("tan(x)", 50, numpy.tan, lambda x: (1 / numpy.cos(x))**2, 19),
+    ("tan(x)", 50, numpy.tan, lambda x: (1 / numpy.cos(x))**2, 20),
+    ("tan(x)", 50, numpy.tan, lambda x: (1 / numpy.cos(x))**2, 21),
+    ("tan(x)", 50, numpy.tan, lambda x: (1 / numpy.cos(x))**2, 22),
 ]
 
 
 def main():
-    for title, f0, f1, split in EXAMPLES:
+    for title, ylim, f0, f1, split in EXAMPLES:
         root, history = newton_root(f0, f1, split)
 
         # Display everything
@@ -53,16 +58,17 @@ def main():
             axes[0].legend()
             axes[0].set_title(f"Function y={title}, found root: {root:.3f}")
 
-            plot_x = numpy.linspace(min_x-1, max_x+1, 200)
+            plot_x = numpy.linspace(min_x-2, max_x+2, 200)
             plot_y = numpy.array([f0(x) for x in plot_x])
             min_y, max_y = (numpy.min(plot_y), numpy.max(plot_y))
             axes[1].plot(plot_x, plot_y, 'b', lw=3, label=f"{title}")
             axes[1].plot([min_x,] * 2, [min_y, max_y], 'k--', label="area shown above")
             axes[1].plot([max_x,] * 2, [min_y, max_y], 'k--')
             axes[1].legend()
-            axes[1].set_xlim(min_x-1, max_x+1)
+            axes[1].set_xlim(min_x-2, max_x+2)
+            axes[1].set_ylim(-ylim, ylim)
 
-            pyplot.show()
+    pyplot.show()
 
 
 def newton_root(f0, f1, start, iterations=int(1e4), eps=1e-10):
