@@ -1,7 +1,7 @@
 import numpy
 import pytest
 
-from p1 import get_deriv_term, get_product, poly_interp
+from p1 import divided_differences, get_product, poly_interp
 
 
 @pytest.mark.parametrize("x, X, Y, expected", (
@@ -36,8 +36,8 @@ def test_poly_interp(x, X, Y, expected):
     ([0, 1, -1], [1, 0, 4], 1),
     ([2, 6, -4], [3, 1, 10], 4/60)
 ))
-def test_get_deriv_term(X, Y, expected):
-    assert numpy.isclose(get_deriv_term(X, Y, {}), expected)
+def test_divided_differences(X, Y, expected):
+    assert numpy.isclose(divided_differences(X, Y, {}), expected)
 
 
 @pytest.mark.parametrize("eval_at, X, expected", (

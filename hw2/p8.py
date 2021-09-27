@@ -93,13 +93,19 @@ class Triangle:
     def svd_weights(self, point):
         """
         In order to find the weights to come to a point somewhere within a
-        given triangle, we can use SVD. We have infinite exact solutions, b/c
-        we have three (assumedly independent) vectors covering a 2D space.
-        Therefore the null space is rank 1. We can get an SVD solution on how
-        to reach a particular point with those three vectors, which will be one
-        possible set of weights.
+        given triangle, we can use SVD. There would be infinite exact
+        solutions, b/c we have three (assumedly independent) vectors covering a
+        2D space, so we shall constrain the problem. It's important to have the
+        weights all add up to 1 (for the final location to be hit exactly) so
+        we can add that constraint into the A matrix. If we add a row of 1's to
+        A, then add 1 to the end of the b vector (called "point" here) then
+        we are stating that we need an SVD solution where w1 + w2 + w3 = 1.
         """
-        A = self.points.T
+        # IMPORTANT - By adding the row of ones we constrain the weights to add
+        # up to 1.
+        A = numpy.vstack((self.points.T, numpy.ones(3)))
+        point = numpy.hstack((point, 1))
+
         u, s, vt = numpy.linalg.svd(A)
         # Make sigma_inv a matrix
         sigma_inv = numpy.zeros(A.T.shape)
@@ -107,18 +113,6 @@ class Triangle:
             sigma_inv[i, i] = 1 / s_value
         # Find the SVD solution for this given point in space
         weights = vt.T @ sigma_inv @ u.T @ point
-
-        # TODO: Figure out a final weight solution. This solution to get
-        # weights with a unit norm was a failure, the path diverged extensively
-        # # null space = unit norm
-        # null = vt[2, :]
-        # scalar = numpy.sqrt(1 - numpy.linalg.norm(weights)**2)
-        # assert numpy.isclose(weights.dot(null), 0.0)
-        # return weights + scalar * null
-
-        # TODO: Figure out a final weight solution. This solution using just
-        # the average tracks the paths nicely but doesn't hit the start exactly
-        # return numpy.array([1, 1, 1]) / 3
 
         return weights
 
@@ -154,23 +148,28 @@ class Triangle:
 
 
 class Interpolation:
-    def __init__(self, paths, weights):
+    def __init__(self, paths, weights, start):
         self.paths = paths
         self.weights = weights
+        self.start = start
         # See the poly_interp function for what this does. We want one cache
         # for x and another for y, for each path
         self.derivative_cache = [[{}, {}] for path in paths]
 
     def plot(self, axis):
         # Plot the paths made up by the original triangle
-        axis.plot([-1], [-1], "ko", ms=4, lw=1, label="triangle paths")
+        axis.plot([-1], [-1], "ko-", ms=4, lw=1, label="Chosen triple of paths")
         for path in self.paths:
             axis.plot(path.x, path.y, "ko-", ms=4, lw=1)
 
         time = numpy.linspace(0, len(self.paths[0].x) - 1, 100)
         interp_xy = numpy.array([self.interpolate(t) for t in time])
-        axis.plot([-1], [-1], "g", lw=3, label="interpolated")
-        axis.plot(interp_xy[:, 0], interp_xy[:, 1], "g", lw=3)
+        axis.plot([-1], [-1], "g", lw=3, label="Interpolated")
+        axis.plot(interp_xy[:, 0], interp_xy[:, 1], "g", lw=4)
+
+        axis.set_title("Interpolated path for start point"
+                       f" ({self.start[0]:.1f}, {self.start[1]:.1f})")
+        axis.legend()
 
     def interpolate(self, time):
         """Interpolated weighted paths at the given time.
@@ -239,13 +238,15 @@ def plot_scene(paths=tuple(), fire=True, dest=True, delaunay=None,
     for path in paths:
         axis.plot(*path.plot_args, **path.plot_kwargs)
     if fire:
+        pyplot.plot([-1], [-1], "r", lw=2, label="Fire")
         circle = pyplot.Circle(
-            tuple(FIRE_PT), FIRE_RADIUS, color='r', fill=False, lw=2
+            tuple(FIRE_PT), FIRE_RADIUS, color='r', fill=False, lw=2,
         )
         axis.add_artist(circle)
     if dest:
-        axis.plot([8], [8], "ro", ms=15)
+        axis.plot([8], [8], "ro", ms=15, label="Goal")
     if delaunay:
+        axis.set_title("Delaunay triangulation of path starts")
         for simplex in delaunay.simplices:
             for idx0, idx1 in zip(simplex, islice(cycle(simplex), 1, None)):
                 p0 = delaunay.points[idx0]
@@ -253,18 +254,21 @@ def plot_scene(paths=tuple(), fire=True, dest=True, delaunay=None,
                 axis.plot([p0[0], p1[0]], [p0[1], p1[1]], "k", lw=1)
     if tripoint:
         point, triangles = tripoint
+        axis.set_title(f"Starting triangulaion for {point}")
         axis.plot(point[0], point[1], "ko", ms=10)
         for tri in triangles:
-            color = "r"
-            width = 0.5
+            color = "k"
+            width = 1
             if tri.contains(point):
                 color = "g"
-                width = 3
+                width = 4
             for line_args in tri.plot_line_args:
                 pyplot.plot(*line_args, color, lw=width)
     if interpath:
         interpath.plot(axis)
 
+    axis.set_xlabel("X position (m)")
+    axis.set_ylabel("Y position (m)")
     axis.set_xlim(0, 12)
     axis.set_ylim(0, 12)
     axis.set_aspect('equal', adjustable='box')
@@ -291,29 +295,38 @@ def main(paths, plot_contains, plot_delaunay, plot_weights, plot_paths):
         if plot_contains:
             plot_scene(paths, tripoint=(start, triangles))
 
-        # By the HW assertions we should have one single triangle here
+        # By the HW assertions we should have a triangle here, and delaunay
+        # states that it will be singular
         chosen = [tri for tri in triangles if tri.contains(start)][0]
 
         # Find the SVD solution for this given point in space
-        # PROBLEM - BASIC SVD SOLUTION DOES NOT HAVE UNIT NORM
         weights = chosen.svd_weights(start)
         # TODO: Try getting barycentric weights?
 
         # TODO: Refactor this into a function?
         if plot_weights:
+            figure = pyplot.figure()
+            axis = figure.add_subplot(111)
             for point_args in chosen.plot_point_args:
-                pyplot.plot(*point_args)
+                axis.plot(*point_args)
             p0 = numpy.array([0, 0])
             for i, (tripoint, color) in enumerate(zip(chosen.points, "rgb")):
                 p1 = p0 + weights[i] * chosen.points[i]
-                pyplot.plot([0, tripoint[0]], [0, tripoint[1]], color)
-                pyplot.plot([p0[0], p1[0]], [p0[1], p1[1]], color, lw=3)
+                axis.plot([0, tripoint[0]], [0, tripoint[1]], color,
+                          label=f"Triangle point {i+1}")
+                axis.plot([p0[0], p1[0]], [p0[1], p1[1]], color, lw=3,
+                          label=f"Weighted {weights[i]:.2f}xTP{i+1}")
                 p0 = p1
-            pyplot.plot(start[0], start[1], "ko", ms=15)
+            axis.plot(start[0], start[1], "ko", ms=15, label="Starting point")
+            axis.set_aspect('equal', adjustable='box')
+            axis.legend()
+            axis.set_title("Visual check of weighting process")
+            axis.set_xlabel("X position (m)")
+            axis.set_ylabel("Y position (m)")
             pyplot.show()
 
         # Calculate the interpolated path
-        interpolation = Interpolation(chosen.paths, weights)
+        interpolation = Interpolation(chosen.paths, weights, start)
         # But only display it if requested
         if plot_paths:
             plot_scene(paths, interpath=interpolation)

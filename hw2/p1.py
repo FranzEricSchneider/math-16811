@@ -119,18 +119,18 @@ def poly_interp(eval_at, X, Y, deriv_cache):
     Arguments:
         eval_at: float, value at which we want to interpolate
         X, Y: 1D lists/arrays of floats, same length, data points
-        deriv_cache: dictionary which get_deriv_term stores already-seen
+        deriv_cache: dictionary which divided_differences stores already-seen
             derivative values in (helpful for very deep recursion)
 
     Returns: float, best guess at the interpolation
     """
     return numpy.sum([
-        get_deriv_term(X[:i+1], Y[:i+1], deriv_cache) * get_product(eval_at, X[:i])
+        divided_differences(X[:i+1], Y[:i+1], deriv_cache) * get_product(eval_at, X[:i])
         for i in range(len(X))
     ])
 
 
-def get_deriv_term(X, Y, deriv_cache):
+def divided_differences(X, Y, deriv_cache):
     """
     Recursive process. Generally speaking f[x0, ..., xk] is equal to
     (f[x1...xn] - f[x0...x_{n-1}]) / (xk - x0). This lends itself very well to
@@ -153,8 +153,8 @@ def get_deriv_term(X, Y, deriv_cache):
         try:
             return deriv_cache[key]
         except KeyError:
-            fx_1_k = get_deriv_term(X[1:], Y[1:], deriv_cache)
-            fx_0_km1 = get_deriv_term(X[:-1], Y[:-1], deriv_cache)
+            fx_1_k = divided_differences(X[1:], Y[1:], deriv_cache)
+            fx_0_km1 = divided_differences(X[:-1], Y[:-1], deriv_cache)
             deriv_cache[key] = (fx_1_k - fx_0_km1) / (X[-1] - X[0])
             return deriv_cache[key]
 
