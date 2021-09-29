@@ -113,6 +113,7 @@ class Triangle:
             sigma_inv[i, i] = 1 / s_value
         # Find the SVD solution for this given point in space
         weights = vt.T @ sigma_inv @ u.T @ point
+        print("weights: ", weights)
 
         return weights
 
