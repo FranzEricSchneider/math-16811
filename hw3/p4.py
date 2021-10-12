@@ -85,8 +85,10 @@ def plot_processed(xyz, filename, weights, n=50):
     figure = pyplot.figure()
     axis = pyplot.axes(projection='3d')
 
-    x = numpy.linspace(numpy.min(xyz[:, 0]), numpy.max(xyz[:, 0]), n)
-    y = numpy.linspace(numpy.min(xyz[:, 1]), numpy.max(xyz[:, 1]), n)
+    inliers = xyz[plane_distance(xyz, weights, average=False) < 0.02]
+
+    x = numpy.linspace(numpy.min(inliers[:, 0]), numpy.max(inliers[:, 0]), n)
+    y = numpy.linspace(numpy.min(inliers[:, 1]), numpy.max(inliers[:, 1]), n)
     X, Y = numpy.meshgrid(x, y)
     Z = plane_z_from_xy(X, Y, weights)
     axis.plot(X.flatten(), Y.flatten(), Z.flatten(), "r", label="Fit")
@@ -118,7 +120,7 @@ def ransac_plane(xyz, min_frac=0.25, batch=12, clean_std=2.07e-3):
 
     # Choose a threshold that is a certain number of standard deviations from
     # a clean fit to good data
-    threshold = 3 * clean_std
+    threshold = 4 * clean_std
     # Make a vector mask to check which variables have already been claimed
     unclaimed = numpy.ones(xyz.shape[0], dtype=bool)
     # Number of points needed
@@ -193,11 +195,38 @@ def p4d(filename):
     xyz_values = read_values(filename)
     plot_raw(xyz_values, filename)
 
-    weight_groups, _, _ = ransac_plane(xyz_values, min_frac=0.15, batch=100)
-    import ipdb; ipdb.set_trace()
+    weight_groups, _, _ = ransac_plane(xyz_values, min_frac=0.10, batch=100)
+    print(f"Found {len(weight_groups)} weight groups")
 
     for weights in weight_groups:
         print(f"Weights after RANSAC from {filename}: {weights}")
+        plot_processed(xyz_values, filename, weights)
+
+
+def p4e(filename):
+
+    xyz_values = read_values(filename)
+    plot_raw(xyz_values, filename)
+
+    v1_weight_groups, _, v1_unclaimed = ransac_plane(
+        xyz_values, min_frac=0.2, batch=50, clean_std=0.01
+    )
+    print(f"Found {len(v1_weight_groups)} weight groups")
+
+    # Uncomment to view the remaining points
+    # plot_raw(xyz_values[v1_unclaimed], "V2_cluttered_hallway")
+
+    v2_weight_groups, _, v2_unclaimed = ransac_plane(
+        xyz_values[v1_unclaimed], min_frac=0.4, batch=100, clean_std=0.05
+    )
+    print(f"Found {len(v2_weight_groups)} more weight groups in the second pass")
+
+    for weights in v1_weight_groups:
+        print(f"V1 weights after RANSAC from {filename}: {weights}")
+        plot_processed(xyz_values, filename, weights)
+
+    for weights in v2_weight_groups:
+        print(f"V2 weights after RANSAC from {filename}: {weights}")
         plot_processed(xyz_values, filename, weights)
 
 
@@ -215,4 +244,7 @@ if __name__ == "__main__":
     # p4c("cluttered_table.txt")
 
     # Part D
-    p4d("clean_hallway.txt")
+    # p4d("clean_hallway.txt")
+
+    # Part E
+    p4e("cluttered_hallway.txt")
