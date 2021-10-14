@@ -56,8 +56,9 @@ def p4a(filename):
     plot_raw(xyz_values, filename)
     weights = fit_plane(xyz_values)
     print(f"Weights from {filename}: {weights}")
-    plot_processed(xyz_values, filename, weights)
     print(f"Average distance from plane: {plane_distance(xyz_values, weights, average=True) * 1000}mm")
+    print(f"{xyz_values.shape} points")
+    plot_processed(xyz_values, filename, weights)
 
 
 def plot_raw(xyz, filename):
@@ -91,7 +92,7 @@ def plot_processed(xyz, filename, weights, n=50):
     y = numpy.linspace(numpy.min(inliers[:, 1]), numpy.max(inliers[:, 1]), n)
     X, Y = numpy.meshgrid(x, y)
     Z = plane_z_from_xy(X, Y, weights)
-    axis.plot(X.flatten(), Y.flatten(), Z.flatten(), "r", label="Fit")
+    axis.plot(X.flatten(), Y.flatten(), Z.flatten(), "ro-", label="Fit")
 
     axis.plot(xyz[:, 0], xyz[:, 1], xyz[:, 2], "bo", label="Raw")
 
@@ -100,6 +101,34 @@ def plot_processed(xyz, filename, weights, n=50):
     axis.set_zlabel("Z (m)")
     axis.set_title(f"{filename} values compared to plane, (a, b, c, d) = {weights}")
     axis.legend()
+    pyplot.show()
+
+
+def plot_multi_processed(xyz, filename, weight_groups, n=50, zlim=None):
+    figure = pyplot.figure()
+    axis = pyplot.axes(projection='3d')
+
+    for weights in weight_groups:
+        inliers = xyz[plane_distance(xyz, weights, average=False) < 0.02]
+
+        x = numpy.linspace(numpy.min(inliers[:, 0]), numpy.max(inliers[:, 0]), n)
+        y = numpy.linspace(numpy.min(inliers[:, 1]), numpy.max(inliers[:, 1]), n)
+        X, Y = numpy.meshgrid(x, y)
+        Z = plane_z_from_xy(X, Y, weights).flatten()
+        mask = numpy.ones(Z.shape[0], dtype=bool)
+        if zlim:
+            mask &= Z > zlim[0]
+            mask &= Z < zlim[1]
+        axis.plot(X.flatten()[mask], Y.flatten()[mask], Z[mask], "ro-")
+
+        axis.plot(xyz[:, 0], xyz[:, 1], xyz[:, 2], "bo")
+
+    if zlim:
+        axis.set_zlim(zlim)
+    axis.set_xlabel("X (m)")
+    axis.set_ylabel("Y (m)")
+    axis.set_zlabel("Z (m)")
+    axis.set_title(f"{filename} values compared to {len(weight_groups)} fit planes")
     pyplot.show()
 
 
@@ -184,10 +213,11 @@ def p4c(filename):
     weights = weight_groups[0]
 
     print(f"Weights after RANSAC from {filename}: {weights}")
-    plot_processed(xyz_values, filename, weights)
+    print(f"Percent of points used {100 * (1 - (numpy.sum(unclaimed) / unclaimed.shape[0]))}%")
     print("Average inlier distance from plane: "
           f"{plane_distance(xyz_values[numpy.logical_not(unclaimed)], weights, average=True) * 1000}mm")
     print(f"Average distance from plane: {plane_distance(xyz_values, weights, average=True) * 1000}mm")
+    plot_processed(xyz_values, filename, weights)
 
 
 def p4d(filename):
@@ -195,12 +225,12 @@ def p4d(filename):
     xyz_values = read_values(filename)
     plot_raw(xyz_values, filename)
 
-    weight_groups, _, _ = ransac_plane(xyz_values, min_frac=0.10, batch=100)
+    weight_groups, _, unclaimed = ransac_plane(xyz_values, min_frac=0.10, batch=100)
     print(f"Found {len(weight_groups)} weight groups")
+    print(f"{100 * (numpy.sum(unclaimed) / unclaimed.shape[0])}% of points unrepresented")
+    print(f"Weights after RANSAC from {filename}: {weight_groups}")
 
-    for weights in weight_groups:
-        print(f"Weights after RANSAC from {filename}: {weights}")
-        plot_processed(xyz_values, filename, weights)
+    plot_multi_processed(xyz_values, filename, weight_groups, zlim=(0, 3))
 
 
 def p4e(filename):
@@ -217,34 +247,73 @@ def p4e(filename):
     # plot_raw(xyz_values[v1_unclaimed], "V2_cluttered_hallway")
 
     v2_weight_groups, _, v2_unclaimed = ransac_plane(
-        xyz_values[v1_unclaimed], min_frac=0.4, batch=100, clean_std=0.05
+        xyz_values[v1_unclaimed], min_frac=0.4, batch=150, clean_std=0.04
     )
     print(f"Found {len(v2_weight_groups)} more weight groups in the second pass")
+    print(f"V1 weights after RANSAC from {filename}: {v1_weight_groups}")
+    print(f"V2 weights after RANSAC from {filename}: {v2_weight_groups}")
+    print(f"{100 * (numpy.sum(v2_unclaimed) / xyz_values.shape[0])}% of points unrepresented")
 
-    for weights in v1_weight_groups:
-        print(f"V1 weights after RANSAC from {filename}: {weights}")
-        plot_processed(xyz_values, filename, weights)
+    weight_groups = v1_weight_groups + v2_weight_groups
+    plot_multi_processed(xyz_values, filename, weight_groups, zlim=(1, 6))
 
-    for weights in v2_weight_groups:
-        print(f"V2 weights after RANSAC from {filename}: {weights}")
-        plot_processed(xyz_values, filename, weights)
+    for weights, threshold, name in zip(weight_groups,
+                                        [0.04, 0.04, 0.04, 0.04],
+                                        ["Pass 1", "Pass 1", "Pass 2", "Pass 2"]):
+        project_wall(xyz_values, weights, threshold, name)
 
 
+def project_wall(xyz, weights, threshold, name):
+    # Consider only the inliers
+    inliers = xyz[plane_distance(xyz, weights, average=False) < threshold]
+    distances = plane_distance(inliers, weights, average=False)
 
+    # Do Gram-Schmidt to get orthogonal axes perpendicular to the plane
+    def gram_schmidt(axis, references):
+        for reference in references:
+            axis -= reference * (axis.dot(reference) / numpy.linalg.norm(reference))
+        return axis / numpy.linalg.norm(axis)
+    axis_0 = gram_schmidt(axis=numpy.array([1, 0, 0], dtype=float),
+                          references=[weights[:3]])
+    axis_1 = gram_schmidt(axis=numpy.array([0, 1, 0], dtype=float),
+                          references=[weights[:3], axis_0])
+    x = inliers.dot(axis_0)
+    y = inliers.dot(axis_1)
+
+    # Do related print statements
+    RMS = numpy.sqrt(numpy.average(distances**2))
+    density = len(x) / ((x.max() - x.min()) * (y.max() - y.min()))
+    print(f"{weights}: RMS is {RMS}m")
+    print(f"{weights}: Density is {density} pts/m^2")
+
+    # Colormapped scatter plot
+    pyplot.scatter(x, y, c=1000*distances, cmap="jet")
+    pyplot.gca().set_aspect('equal', 'box')
+    colorbar = pyplot.colorbar()
+    colorbar.set_label('Distance from plane (mm)')
+    pyplot.title(f"{name}: {weights}\nRMS: {RMS:.3f}m, density: {density:.1f} pts/m^2")
+    pyplot.xlabel("Axis 0 (x with plane elements removed) (m)")
+    pyplot.ylabel("Axis 1 (y with Axis 0 and plane elements removed) (m)")
+    pyplot.show()
 
 
 if __name__ == "__main__":
     # Part A
-    # p4a("clear_table.txt")
+    print("\nPart A")
+    p4a("clear_table.txt")
 
     # Part B can just use the same code
-    # p4a("cluttered_table.txt")
+    print("\nPart B")
+    p4a("cluttered_table.txt")
 
     # Part C
-    # p4c("cluttered_table.txt")
+    print("\nPart C")
+    p4c("cluttered_table.txt")
 
     # Part D
-    # p4d("clean_hallway.txt")
+    print("\nPart D")
+    p4d("clean_hallway.txt")
 
     # Part E
+    print("\nPart E")
     p4e("cluttered_hallway.txt")
