@@ -134,20 +134,20 @@ def random_2D_plots(axes, functions, data, num, key):
         pyplot.close(figure)
 
 
+def random_vector(RNG, axes):
+    # Random scales from -1 to 1
+    scales = (RNG.random(size=len(axes)) * 2) - 1
+    return numpy.array([scale * axis[-1]
+                        for scale, axis in zip(scales, axes)])
+
+
 def line_visualization(axes, functions, data, num, key):
     RNG = numpy.random.default_rng(key)
 
     for i in range(num):
 
         # Generate two random vectors
-        vectors = []
-        for _ in range(2):
-            # Random scales from -1 to 1
-            scales = (RNG.random(size=len(axes)) * 2) - 1
-            vectors.append(numpy.array([
-                scale * axis[-1]
-                for scale, axis in zip(scales, axes)
-            ]))
+        vectors = [random_vector(RNG, axes) for _ in range(2)]
 
         # Scale between them
         x = numpy.linspace(0, 1, 100)
@@ -167,6 +167,43 @@ def line_visualization(axes, functions, data, num, key):
         pyplot.close(figure)
 
 
+def center_ray_visualization(axes, functions, data, num, key):
+    RNG = numpy.random.default_rng(key)
+
+    center = numpy.zeros(len(functions))
+    for i in range(num):
+
+        # Generate two random axis vectors
+        vectors = [random_vector(RNG, axes) for _ in range(2)]
+
+        X, Y = numpy.meshgrid(numpy.linspace(-1, 1, 200),
+                              numpy.linspace(-1, 1, 200),
+                              indexing="ij")
+        XY_vector = (numpy.outer(vectors[0], X.flatten()) +
+                     numpy.outer(vectors[1], Y.flatten()))
+        Z = numpy.sum([
+            function(XY_vector[i])
+            for i, function in enumerate(functions)
+        ], axis=0)
+
+        figure = pyplot.figure()
+        axis = pyplot.axes(projection='3d')
+        axis.scatter(X.flatten(), Y.flatten(), Z, c=Z, cmap="jet")
+        axis.set_xlabel(f"Axis {vectors[0]}")
+        axis.set_ylabel(f"Axis {vectors[1]}")
+        axis.set_title(f"Random 2D viz, center 0")
+        pyplot.savefig(f"random_2d_try{i+1}.png")
+        pyplot.close(figure)
+
+        figure, axis = pyplot.subplots()
+        axis.contour(X, Y, Z.reshape(X.shape), levels=30)
+        axis.set_xlabel(f"Axis {vectors[0]}")
+        axis.set_ylabel(f"Axis {vectors[1]}")
+        axis.set_title(f"Random 2D viz, center 0")
+        pyplot.savefig(f"random_2d_try{i+1}_contour.png")
+        pyplot.close(figure)
+
+
 def main():
     # Create data and get some initial looks
     axes, functions, data = create_random_data(11111)
@@ -174,7 +211,10 @@ def main():
     # random_2D_plots(axes, functions, data, num=10, key=33333)
 
     # Viz method #1
-    line_visualization(axes, functions, data, num=10, key=44444)
+    # line_visualization(axes, functions, data, num=10, key=44444)
+
+    # Viz method #2
+    center_ray_visualization(axes, functions, data, num=10, key=55555)
 
 
 if __name__ == "__main__":
