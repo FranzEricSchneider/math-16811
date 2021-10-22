@@ -11,6 +11,7 @@ def main(plot_initial):
 
     start_point = numpy.array([10, 10])
     end_point = numpy.array([90, 90])
+    endpoints = numpy.vstack((start_point, end_point))
     vector = end_point - start_point
 
     num_pts = 100
@@ -18,12 +19,28 @@ def main(plot_initial):
         numpy.outer(numpy.linspace(0, 1, num_pts), vector)
 
     if plot_initial:
-        plot_scene(initial_path, obstacle_cost)
+        plot_scene(initial_path, obstacle_cost, endpoints)
 
-    naive_1step_path, _ = naive_gradient(initial_path, obstacle_cost, steps=1)
-    plot_scene(naive_1step_path, obstacle_cost)
-    naive_path, _ = naive_gradient(initial_path, obstacle_cost)
-    plot_scene(naive_path, obstacle_cost)
+    # # Part A
+    # naive_1step, _ = iterative_path(initial_path,
+    #                                 obstacle_cost,
+    #                                 TODOTHING,
+    #                                 rate=8,
+    #                                 steps=1)
+    # plot_scene(naive_1step, obstacle_cost, endpoints,
+    #            title="A) Naive Gradient 1 Step (rate 8x)")
+    # naive, _ = iterative_path(initial_path, obstacle_cost, TODOTHING)
+    # plot_scene(naive, obstacle_cost, endpoints,
+    #            title="A) Naive Gradient Converged")
+
+    # Part B
+    for steps in (100, 200, 500):
+        dist1d, _ = iterative_path(initial_path,
+                                   obstacle_cost,
+                                   OTHERTHING,
+                                   steps=steps)
+        plot_scene(dist1d, obstacle_cost, endpoints,
+                   title=f"B) 1D Smoothing {steps} steps")
 
 
 def generate_cost():
@@ -42,29 +59,46 @@ def generate_cost():
 
 
 def get_values(path, space2D):
+    """
+    Path is a (N, 2) vector
+    space2D is an (M, M) matrix
+    """
     # If this assertion fails, rethink the x, y step
     assert space2D.shape[0] == space2D.shape[1]
     x, y = numpy.clip(path.astype(int).T, 0, space2D.shape[0] - 1)
     return space2D[x, y]
 
 
-def plot_scene(path, cost):
-    values = get_values(path, cost)
+def plot_scene(path, cost, endpoints, title=None):
 
     # Plot 2D
     pyplot.imshow(cost.T)
+    pyplot.plot(endpoints[:, 0], endpoints[:, 1], "go", ms=10)
+    if title is not None:
+        pyplot.title(title)
     pyplot.plot(path[:, 0], path[:, 1], "ro", ms=1)
 
     # Plot 3D
     fig3d = pyplot.figure()
     ax3d = fig3d.add_subplot(111, projection="3d")
     xx, yy = numpy.meshgrid(range(cost.shape[1]), range(cost.shape[0]))
-    ax3d.plot_surface(xx, yy, cost.T, cmap=pyplot.get_cmap("coolwarm"))
-    ax3d.scatter(path[:, 0], path[:, 1], values, s=20, c="r")
+    ax3d.plot_surface(xx, yy, cost.T, cmap=pyplot.get_cmap("coolwarm"), alpha=0.6)
+    ax3d.scatter(endpoints[:, 0],
+                 endpoints[:, 1],
+                 get_values(endpoints, cost),
+                 s=50,
+                 c="g")
+    ax3d.scatter(path[:, 0],
+                 path[:, 1],
+                 get_values(path, cost),
+                 s=20,
+                 c="r")
+    if title is not None:
+        ax3d.set_title(title)
     pyplot.show()
 
 
-def naive_gradient(path, cost, rate=0.1, steps=0):
+def iterative_path(path, cost, THING, rate=0.1, steps=0, step_thresh=1e-5):
     # Re-check clip step if this fails
     assert cost.shape[0] == cost.shape[1]
     # Don't modify the original path
@@ -74,26 +108,48 @@ def naive_gradient(path, cost, rate=0.1, steps=0):
     # Keep looping until values stop changing very much
     count = 0
     sqr_step = 1000
-    while sqr_step > 1e-5:
+    while sqr_step > step_thresh:
         # Step downwards
         last_path = path.copy()
-        step = -rate * numpy.vstack([get_values(path, gx),
-                                     get_values(path, gy)]).T
-        path += step
-        path = numpy.clip(path, 0, cost.shape[0])
+        step = -rate * THING(path, gx, gy)
+        # Don't modify the endpoints
+        path[1:-1] += step[1:-1]
+        # Enforce that we don't go outside the area
+        path = numpy.clip(path, 0, cost.shape[0] - 1)
         # See how big the step was to evaluate ending
         sqr_step = numpy.sum((last_path - path)**2)
         # Bookkeeping at the end
         count += 1
-        print(f"count: {count}")
         # Check if there is an early ending criteria
         if steps > 0:
             if count == steps:
-                print("count == steps!!")
                 return path, count
 
     return path, count
 
+
+def TODOTHING(path, gx, gy):
+    return numpy.vstack([get_values(path, gx),
+                         get_values(path, gy)]).T
+
+
+def OTHERTHING(path, gx, gy):
+    """
+    Returns shape (N, 2)
+    """
+
+    gradient_weight = 0.8
+    smooth_weight = 4.0
+
+    gradient_force = gradient_weight * \
+                     numpy.vstack([get_values(path, gx), get_values(path, gy)])
+
+    norm = numpy.linalg.norm(path[1:] - path[:-1], axis=1)
+    direction = (path[1:] - path[:-1]).T / norm
+    smooth_force = numpy.zeros(gradient_force.shape)
+    smooth_force[:, 1:] = smooth_weight * (0.5 * norm**2) * direction
+
+    return (gradient_force + smooth_force).T
 
 
 if __name__ == "__main__":
