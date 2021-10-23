@@ -21,26 +21,55 @@ def main(plot_initial):
     if plot_initial:
         plot_scene(initial_path, obstacle_cost, endpoints)
 
-    # # Part A
-    # naive_1step, _ = iterative_path(initial_path,
-    #                                 obstacle_cost,
-    #                                 TODOTHING,
-    #                                 rate=8,
-    #                                 steps=1)
-    # plot_scene(naive_1step, obstacle_cost, endpoints,
-    #            title="A) Naive Gradient 1 Step (rate 8x)")
-    # naive, _ = iterative_path(initial_path, obstacle_cost, TODOTHING)
-    # plot_scene(naive, obstacle_cost, endpoints,
-    #            title="A) Naive Gradient Converged")
+    # Part A
+    naive_1step, _ = iterative_path(initial_path,
+                                    obstacle_cost,
+                                    gradient_alone,
+                                    rate=8,
+                                    steps=1)
+    plot_scene(naive_1step, obstacle_cost, endpoints,
+               title="A) Naive Gradient 1 Step (rate 8x)")
+    naive, _ = iterative_path(initial_path, obstacle_cost, gradient_alone)
+    plot_scene(naive, obstacle_cost, endpoints,
+               title="A) Naive Gradient Converged")
 
     # Part B
     for steps in (100, 200, 500):
         dist1d, _ = iterative_path(initial_path,
                                    obstacle_cost,
-                                   OTHERTHING,
+                                   one_neighbor_smooth,
                                    steps=steps)
         plot_scene(dist1d, obstacle_cost, endpoints,
                    title=f"B) 1D Smoothing {steps} steps")
+
+    # Part C
+    for steps in (100, 5000):
+        dist2d, _ = iterative_path(initial_path,
+                                   obstacle_cost,
+                                   two_neighbor_smooth,
+                                   save=False,
+                                   steps=steps)
+        plot_scene(dist2d, obstacle_cost, endpoints,
+                   title=f"C) 2D Smoothing {steps} steps")
+
+    # Part D
+    half = num_pts // 2
+    down = numpy.outer(numpy.linspace(0, 1, half), numpy.array([0, 80]))
+    right = numpy.outer(numpy.linspace(0, 1, half), numpy.array([80, 0]))
+    path1 = initial_path.copy()
+    path1[:half] = start_point + down
+    path1[half:] = numpy.array([10, 90]) + right
+    path2 = initial_path.copy()
+    path2[:half] = start_point + right
+    path2[half:] = numpy.array([90, 10]) + down
+    for initial_path in (path1, path2):
+        dist2d, _ = iterative_path(initial_path,
+                                   obstacle_cost,
+                                   two_neighbor_smooth,
+                                   kwargs={"smooth_weight": 0.5},
+                                   save=False)
+        plot_scene(dist2d, obstacle_cost, endpoints,
+                   title=f"D) 2D on varied initial")
 
 
 def generate_cost():
@@ -98,7 +127,17 @@ def plot_scene(path, cost, endpoints, title=None):
     pyplot.show()
 
 
-def iterative_path(path, cost, THING, rate=0.1, steps=0, step_thresh=1e-5):
+def save_scene(path, cost, title):
+    figure = pyplot.figure()
+    pyplot.imshow(cost.T)
+    pyplot.title(title)
+    pyplot.plot(path[:, 0], path[:, 1], "ro", ms=1)
+    pyplot.savefig(f"{title}.png")
+    pyplot.close(figure)
+
+
+def iterative_path(path, cost, cost_function, rate=0.1, steps=0,
+                   step_thresh=1e-5, save=False, kwargs={}):
     # Re-check clip step if this fails
     assert cost.shape[0] == cost.shape[1]
     # Don't modify the original path
@@ -111,7 +150,7 @@ def iterative_path(path, cost, THING, rate=0.1, steps=0, step_thresh=1e-5):
     while sqr_step > step_thresh:
         # Step downwards
         last_path = path.copy()
-        step = -rate * THING(path, gx, gy)
+        step = -rate * cost_function(path, gx, gy, **kwargs)
         # Don't modify the endpoints
         path[1:-1] += step[1:-1]
         # Enforce that we don't go outside the area
@@ -120,6 +159,9 @@ def iterative_path(path, cost, THING, rate=0.1, steps=0, step_thresh=1e-5):
         sqr_step = numpy.sum((last_path - path)**2)
         # Bookkeeping at the end
         count += 1
+        # Save if requested
+        if save:
+            save_scene(path, cost, f"path_steps{count}")
         # Check if there is an early ending criteria
         if steps > 0:
             if count == steps:
@@ -128,12 +170,12 @@ def iterative_path(path, cost, THING, rate=0.1, steps=0, step_thresh=1e-5):
     return path, count
 
 
-def TODOTHING(path, gx, gy):
+def gradient_alone(path, gx, gy):
     return numpy.vstack([get_values(path, gx),
                          get_values(path, gy)]).T
 
 
-def OTHERTHING(path, gx, gy):
+def one_neighbor_smooth(path, gx, gy):
     """
     Returns shape (N, 2)
     """
@@ -145,9 +187,32 @@ def OTHERTHING(path, gx, gy):
                      numpy.vstack([get_values(path, gx), get_values(path, gy)])
 
     norm = numpy.linalg.norm(path[1:] - path[:-1], axis=1)
-    direction = (path[1:] - path[:-1]).T / norm
+    vector = (path[1:] - path[:-1]).T
     smooth_force = numpy.zeros(gradient_force.shape)
-    smooth_force[:, 1:] = smooth_weight * (0.5 * norm**2) * direction
+    smooth_force[:, 1:] = smooth_weight * (0.5 * norm**2) * vector
+
+    return (gradient_force + smooth_force).T
+
+
+def two_neighbor_smooth(path, gx, gy, smooth_weight=2.0):
+    """
+    Returns shape (N, 2)
+    """
+
+    gradient_weight = 0.8
+
+    gradient_force = gradient_weight * \
+                     numpy.vstack([get_values(path, gx), get_values(path, gy)])
+
+    norm1 = numpy.linalg.norm(path[1:-1] - path[:-2], axis=1)
+    norm2 = numpy.linalg.norm(path[2:] - path[1:-1], axis=1)
+    vector = ((path[1:-1] - path[:-2]) + (path[1:-1] - path[2:])).T
+    smooth_force = numpy.zeros(gradient_force.shape)
+    smooth_force[:, 1:-1] = (
+        smooth_weight *
+        (0.5 * norm1**2 + 0.5 * norm2**2) *
+        vector
+    )
 
     return (gradient_force + smooth_force).T
 
