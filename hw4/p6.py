@@ -66,7 +66,6 @@ def main(plot_initial):
         dist2d, _ = iterative_path(initial_path,
                                    obstacle_cost,
                                    two_neighbor_smooth,
-                                   kwargs={"smooth_weight": 0.5},
                                    save=False)
         plot_scene(dist2d, obstacle_cost, endpoints,
                    title=f"D) 2D on varied initial")
@@ -137,7 +136,7 @@ def save_scene(path, cost, title):
 
 
 def iterative_path(path, cost, cost_function, rate=0.1, steps=0,
-                   step_thresh=1e-5, save=False, kwargs={}):
+                   step_thresh=1e-5, save=False):
     # Re-check clip step if this fails
     assert cost.shape[0] == cost.shape[1]
     # Don't modify the original path
@@ -150,7 +149,7 @@ def iterative_path(path, cost, cost_function, rate=0.1, steps=0,
     while sqr_step > step_thresh:
         # Step downwards
         last_path = path.copy()
-        step = -rate * cost_function(path, gx, gy, **kwargs)
+        step = -rate * cost_function(path, gx, gy)
         # Don't modify the endpoints
         path[1:-1] += step[1:-1]
         # Enforce that we don't go outside the area
@@ -186,33 +185,27 @@ def one_neighbor_smooth(path, gx, gy):
     gradient_force = gradient_weight * \
                      numpy.vstack([get_values(path, gx), get_values(path, gy)])
 
-    norm = numpy.linalg.norm(path[1:] - path[:-1], axis=1)
     vector = (path[1:] - path[:-1]).T
     smooth_force = numpy.zeros(gradient_force.shape)
-    smooth_force[:, 1:] = smooth_weight * (0.5 * norm**2) * vector
+    smooth_force[:, 1:] = smooth_weight * vector
 
     return (gradient_force + smooth_force).T
 
 
-def two_neighbor_smooth(path, gx, gy, smooth_weight=2.0):
+def two_neighbor_smooth(path, gx, gy):
     """
     Returns shape (N, 2)
     """
 
     gradient_weight = 0.8
+    smooth_weight = 4.0
 
     gradient_force = gradient_weight * \
                      numpy.vstack([get_values(path, gx), get_values(path, gy)])
 
-    norm1 = numpy.linalg.norm(path[1:-1] - path[:-2], axis=1)
-    norm2 = numpy.linalg.norm(path[2:] - path[1:-1], axis=1)
     vector = ((path[1:-1] - path[:-2]) + (path[1:-1] - path[2:])).T
     smooth_force = numpy.zeros(gradient_force.shape)
-    smooth_force[:, 1:-1] = (
-        smooth_weight *
-        (0.5 * norm1**2 + 0.5 * norm2**2) *
-        vector
-    )
+    smooth_force[:, 1:-1] = smooth_weight * vector
 
     return (gradient_force + smooth_force).T
 
