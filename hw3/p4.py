@@ -63,7 +63,7 @@ def p4a(filename):
 
 def plot_raw(xyz, filename):
     figure = pyplot.figure()
-    axis = pyplot.axes(projection='3d')
+    axis = pyplot.axes(projection="3d")
     axis.plot(xyz[:, 0], xyz[:, 1], xyz[:, 2], "bo")
     axis.set_xlabel("X (m)")
     axis.set_ylabel("Y (m)")
@@ -84,7 +84,7 @@ def plane_z_from_xy(X, Y, weights):
 
 def plot_processed(xyz, filename, weights, n=50):
     figure = pyplot.figure()
-    axis = pyplot.axes(projection='3d')
+    axis = pyplot.axes(projection="3d")
 
     inliers = xyz[plane_distance(xyz, weights, average=False) < 0.02]
 
@@ -106,7 +106,7 @@ def plot_processed(xyz, filename, weights, n=50):
 
 def plot_multi_processed(xyz, filename, weight_groups, n=50, zlim=None):
     figure = pyplot.figure()
-    axis = pyplot.axes(projection='3d')
+    axis = pyplot.axes(projection="3d")
 
     for weights in weight_groups:
         inliers = xyz[plane_distance(xyz, weights, average=False) < 0.02]
@@ -288,9 +288,9 @@ def project_wall(xyz, weights, threshold, name):
 
     # Colormapped scatter plot
     pyplot.scatter(x, y, c=1000*distances, cmap="jet")
-    pyplot.gca().set_aspect('equal', 'box')
+    pyplot.gca().set_aspect("equal", "box")
     colorbar = pyplot.colorbar()
-    colorbar.set_label('Distance from plane (mm)')
+    colorbar.set_label("Distance from plane (mm)")
     pyplot.title(f"{name}: {weights}\nRMS: {RMS:.3f}m, density: {density:.1f} pts/m^2")
     pyplot.xlabel("Axis 0 (x with plane elements removed) (m)")
     pyplot.ylabel("Axis 1 (y with Axis 0 and plane elements removed) (m)")
